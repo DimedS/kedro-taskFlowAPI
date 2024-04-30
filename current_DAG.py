@@ -9,6 +9,7 @@ from airflow.utils.decorators import apply_defaults
 from kedro.framework.session import KedroSession
 from kedro.framework.project import configure_project
 
+from airflow.decorators import dag, task
 
 class KedroOperator(BaseOperator):
     @apply_defaults
@@ -28,7 +29,7 @@ class KedroOperator(BaseOperator):
         self.project_path = project_path
         self.env = env
 
-    def execute(self, context):
+    def execute(self):
         configure_project(self.package_name)
         with KedroSession.create(project_path=self.project_path,
                                  env=self.env) as session:
@@ -41,9 +42,8 @@ pipeline_name = "__default__"
 project_path = Path.cwd()
 package_name = "new_kedro_project"
 
-# Using a DAG context manager, you don't have to specify the dag property of each task
-with DAG(
-    dag_id="new-kedro-project",
+@dag(
+    dag_id="kedro-fastFlow-2",
     start_date=datetime(2023,1,1),
     max_active_runs=3,
     # https://airflow.apache.org/docs/stable/scheduler.html#dag-runs
@@ -58,61 +58,72 @@ with DAG(
         retries=1,
         retry_delay=timedelta(minutes=5)
     )
-) as dag:
-    tasks = {
-        "preprocess-companies-node": KedroOperator(
+)
+def kedro_project():
+    @task
+    def preprocess_companies_node(*args):
+        KedroOperator(
             task_id="preprocess-companies-node",
             package_name=package_name,
             pipeline_name=pipeline_name,
             node_name="preprocess_companies_node",
             project_path=project_path,
             env=env,
-        ),
-        "preprocess-shuttles-node": KedroOperator(
+        ).execute()
+    @task
+    def preprocess_shuttles_node(*args):
+        KedroOperator(
             task_id="preprocess-shuttles-node",
             package_name=package_name,
             pipeline_name=pipeline_name,
             node_name="preprocess_shuttles_node",
             project_path=project_path,
             env=env,
-        ),
-        "create-model-input-table-node": KedroOperator(
+        ).execute()
+    @task
+    def create_model_input_table_node(*args):
+        KedroOperator(
             task_id="create-model-input-table-node",
             package_name=package_name,
             pipeline_name=pipeline_name,
             node_name="create_model_input_table_node",
             project_path=project_path,
             env=env,
-        ),
-        "split-data-node": KedroOperator(
+        ).execute()
+    @task
+    def split_data_node(*args):
+        KedroOperator(
             task_id="split-data-node",
             package_name=package_name,
             pipeline_name=pipeline_name,
             node_name="split_data_node",
             project_path=project_path,
             env=env,
-        ),
-        "train-model-node": KedroOperator(
+        ).execute()
+    @task
+    def train_model_node(*args):
+        KedroOperator(
             task_id="train-model-node",
             package_name=package_name,
             pipeline_name=pipeline_name,
             node_name="train_model_node",
             project_path=project_path,
             env=env,
-        ),
-        "evaluate-model-node": KedroOperator(
+        ).execute()
+    @task
+    def evaluate_model_node(*args):
+        KedroOperator(
             task_id="evaluate-model-node",
             package_name=package_name,
             pipeline_name=pipeline_name,
             node_name="evaluate_model_node",
             project_path=project_path,
             env=env,
-        ),
-    }
-
-    tasks["split-data-node"] >> tasks["train-model-node"]
-    tasks["split-data-node"] >> tasks["evaluate-model-node"]
-    tasks["create-model-input-table-node"] >> tasks["split-data-node"]
-    tasks["preprocess-companies-node"] >> tasks["create-model-input-table-node"]
-    tasks["preprocess-shuttles-node"] >> tasks["create-model-input-table-node"]
-    tasks["train-model-node"] >> tasks["evaluate-model-node"]
+        ).execute()
+    a = preprocess_companies_node()
+    b = preprocess_shuttles_node()
+    c = create_model_input_table_node(a, b)
+    d = split_data_node(c)
+    e = train_model_node(d)
+    evaluate_model_node(d, e)
+kedro_project()
